@@ -1,8 +1,10 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <net/if.h>
  
 int main()
 {
@@ -13,32 +15,36 @@ int main()
         perror("socket");
         exit(0);
     }
- 
-    // 设置组播属性
-    struct in_addr imr_multiaddr; 
-    // 初始化组播地址
-    inet_pton(AF_INET, "239.0.0.10", &imr_multiaddr.s_addr);
-    setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &imr_multiaddr, sizeof(imr_multiaddr));
 
-    // 将数据发送给服务端, 使用广播地址和固定端口
-    // 初始化服务端的地址信息
-    struct sockaddr_in cliaddr;
-    cliaddr.sin_family = AF_INET;
-    cliaddr.sin_port = htons(13400); // 客户端也需要绑定这端口
-    inet_pton(AF_INET, "239.0.0.10", &cliaddr.sin_addr.s_addr);
+    // 2. 通信的fd绑定本地的IP和端口
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(13400);
+    addr.sin_addr.s_addr = INADDR_ANY;
+    int ret = bind(fd, (struct sockaddr*)&addr, sizeof(addr));
+    if(ret == -1)
+    {
+        perror("bind");
+        exit(0);
+    }
+    //inet_pton(AF_INET, "0.0.0.0", &addr.sin_addr.s_addr);
+    // 加入到组播
+    struct ip_mreqn op;
+    op.imr_address.s_addr = INADDR_ANY; // 本地地址;
+    inet_pton(AF_INET, "239.0.0.10", &op.imr_multiaddr.s_addr);
+    op.imr_ifindex = if_nametoindex("ens33");
  
-    int num = 0;
+    setsockopt(fd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &op, sizeof(op));
+
     // 3. 通信
     while(1)
     {
         // 接收数据
         char buf[128];
-        // 发送数据
-        sprintf(buf, "hello, client...%d\n ", num++);
-        sendto(fd, buf, strlen(buf)+1, 0, (struct sockaddr*)&cliaddr, sizeof(cliaddr));
-        printf("组播的数据: %s\n", buf);
-        sleep(1);
+        recvfrom(fd, buf, sizeof(buf), 0, NULL, NULL);
+        printf("server say: %s\n", buf);
     }
     close(fd);
     return 0;
+
 }
